@@ -61,7 +61,7 @@ class PoeHatB:
 
         draw.text((0, 1), 'IP:' + str(ip), fill=0)
         draw.text((0, 10), 'CPU:%' + str(cpu), fill=0)
-        draw.text((70, 10), 'RAM:%', fill=0)
+        draw.text((70, 10), 'RAM:%' + str(memory), fill=0)
         draw.text((0, 20), 'TEMP:' + str(((int)(temp*10))/10.0), fill=0)
 
         if temp >= fan_temp:
