@@ -4,10 +4,7 @@
 apt update
 apt install -y python3-pip python3-venv python3-pil libatlas-base-dev raspi-config unzip
 
-IS_I2C=`sudo raspi-config nonint get_i2c 1`
-[ $IS_I2C -ne 0 ]&&sudo raspi-config nonint do_i2c 0
-
-# create and activate venv
+# Create and activate python venv
 [ -d /opt/python_base ] && rm -rf /opt/python_base
 python3 -m venv /opt/python_base
 
@@ -15,8 +12,7 @@ python3 -m venv /opt/python_base
 source /opt/python_base/bin/activate
 pip install -r requirements.txt
 
-
-# Move required parts to poe-hat directory
+# Move required files to poe-hat directory
 [ -d /opt/poe-hat ] && rm -rf /opt/poe-hat
 mkdir -p /opt/poe-hat
 mv *.py /opt/poe-hat/
