@@ -51,3 +51,4 @@ systemctl daemon-reload
 systemctl enable poe-hat.service --now
 systemctl restart poe-hat.service
 systemctl status poe-hat.service
+cd
