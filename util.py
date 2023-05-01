@@ -2,7 +2,7 @@ import smbus
 import psutil
 import socket
 from PIL import Image, ImageDraw
-from . import SSD1306
+import SSD1306
 
 show = SSD1306.SSD1306()
 show.Init()
@@ -60,7 +60,7 @@ class PoeHatB:
         cpu = self.get_cpu()
 
         draw.text((0, 1), 'IP:' + str(ip), fill=0)
-        draw.text((0, 10), 'CPU:%' + str(cpu) + '     RAM:%' + str(memory), fill=0)
+        draw.text((0, 10), 'CPU:%' + str(cpu) + '  RAM:%' + str(memory), fill=0)
         draw.text((0, 20), 'TEMP:' + str(((int)(temp*10))/10.0), fill=0)
 
         if temp >= fan_temp:

@@ -1,6 +1,6 @@
 import time
 import logging
-from . import util
+import util
 
 logging.basicConfig(level=logging.INFO)
 
