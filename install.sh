@@ -26,12 +26,12 @@ chmod 777 -R /opt/poe-hat
 cd ..
 rm master.zip
 rm -rf poe_hat_b-master
-rm -f $0
 
 # Create/Activate service
 [ -d /etc/systemd/system/poe-hat.service ] && rm -rf /etc/systemd/system/poe-hat.service
 
 PYTHON=`which python3 |head -n1`
+
 cat <<EOF >poe-hat.service
 [Unit]
 Description=Poe Hat B
