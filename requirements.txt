@@ -1,4 +1,4 @@
 RPi.GPIO
 smbus
-pillow
-psutil
+Pillow
+psutilr
