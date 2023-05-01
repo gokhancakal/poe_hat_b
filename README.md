@@ -20,6 +20,6 @@ For installation you must run the following commands.
     && unzip -o  master.zip -d . \
     && cd poe_hat_b-master \
     && chmod +x install.sh \
-    && ./install.sh
+    && ./install.sh && cd
 <!--endsec-->
 

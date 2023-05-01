@@ -26,7 +26,6 @@ chmod 777 -R /opt/poe-hat
 cd ..
 rm master.zip
 rm -rf poe_hat_b-master
-cd
 
 # Create/Activate service
 [ -d /etc/systemd/system/poe-hat.service ] && rm -rf /etc/systemd/system/poe-hat.service
