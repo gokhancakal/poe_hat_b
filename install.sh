@@ -5,11 +5,11 @@ apt update
 apt install -y python3-pip python3-venv python3-pil libatlas-base-dev raspi-config unzip
 
 # Create and activate python venv
-[ -d /opt/python_base ] && rm -rf /opt/python_base
-python3 -m venv /opt/python_base
+[ -d /opt/python_poe ] && rm -rf /opt/python_poe
+python3 -m venv /opt/python_poe
 
 # Install required packages II
-source /opt/python_base/bin/activate
+source /opt/python_poe/bin/activate
 pip install -r requirements.txt
 
 # Move required files to poe-hat directory
@@ -26,7 +26,7 @@ rm -rf poe_hat_b-master
 # Create/Activate service
 [ -d /etc/systemd/system/poe-hat.service ] && rm -rf /etc/systemd/system/poe-hat.service
 
-PYTHON=`which python3 |head -n1`
+PYTHON='which python3 |head -n1'
 
 cat <<EOF >poe-hat.service
 [Unit]
