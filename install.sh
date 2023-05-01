@@ -13,7 +13,7 @@ python3 -m venv /opt/python_base
 
 # Install required packages II
 source /opt/python_base/bin/activate
-pip install -r reqirements.txt
+pip install -r requirements.txt
 
 
 # Move required parts to poe-hat directory
@@ -21,13 +21,12 @@ pip install -r reqirements.txt
 mkdir -p /opt/poe-hat
 mv *.py /opt/poe-hat/
 chmod 777 -R /opt/poe-hat
-rm -f $0
 
 # Cleanup
 cd ..
 rm master.zip
 rm -rf poe_hat_b-master
-rm -f $0
+cd
 
 # Create/Activate service
 [ -d /etc/systemd/system/poe-hat.service ] && rm -rf /etc/systemd/system/poe-hat.service
