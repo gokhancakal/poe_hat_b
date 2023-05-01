@@ -13,7 +13,7 @@ python3 -m venv /opt/python_base
 
 # Install required packages II
 source /opt/python_base/bin/activate
-pip install RPi.GPIO smbus numpy pillow psutil
+pip -r reqirements.txt
 
 
 # Move required parts to poe-hat directory

@@ -70,9 +70,9 @@ class PoeHatB:
             self.fan_mode = 0
 
         if self.fan_mode == 1:
-            draw.text((76, 20), 'FAN:ON', fill=0)
+            draw.text((75, 20), 'FAN:ON', fill=0)
             self.fan_on()
         else:
-            draw.text((76, 20), 'FAN:OFF', fill=0)
+            draw.text((75, 20), 'FAN:OFF', fill=0)
             self.fan_off()
         show.ShowImage(show.getbuffer(image1))
