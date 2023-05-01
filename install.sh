@@ -13,7 +13,7 @@ python3 -m venv /opt/python_base
 
 # Install required packages II
 source /opt/python_base/bin/activate
-pip -r reqirements.txt
+pip install -r reqirements.txt
 
 
 # Move required parts to poe-hat directory
