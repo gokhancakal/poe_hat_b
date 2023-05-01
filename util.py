@@ -60,7 +60,8 @@ class PoeHatB:
         cpu = self.get_cpu()
 
         draw.text((0, 1), 'IP:' + str(ip), fill=0)
-        draw.text((0, 10), 'CPU:%' + str(cpu) + '   RAM:%' + str(memory), fill=0)
+        draw.text((0, 10), 'CPU:%' + str(cpu), fill=0)
+        draw.text((70, 10), 'RAM:%', fill=0)
         draw.text((0, 20), 'TEMP:' + str(((int)(temp*10))/10.0), fill=0)
 
         if temp >= fan_temp:
@@ -70,9 +71,9 @@ class PoeHatB:
             self.fan_mode = 0
 
         if self.fan_mode == 1:
-            draw.text((65, 20), 'FAN:ON', fill=0)
+            draw.text((70, 20), 'FAN:ON', fill=0)
             self.fan_on()
         else:
-            draw.text((65, 20), 'FAN:OFF', fill=0)
+            draw.text((70, 20), 'FAN:OFF', fill=0)
             self.fan_off()
         show.ShowImage(show.getbuffer(image1))
