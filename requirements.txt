@@ -1,4 +1,4 @@
 RPi.GPIO
 pillow
 smbus
-numpy
+psutil
