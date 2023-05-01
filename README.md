@@ -1,4 +1,6 @@
 
+This installation is designed for **Power Over Ethernet HAT (Type B)** OLED and FAN control for Ubuntu OS.
+
 For installation you must run the following commands.
 
 #### Enable I2C Interface

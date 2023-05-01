@@ -10,6 +10,7 @@ python3 -m venv /opt/python_poe
 
 # Install required packages II
 source /opt/python_poe/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 
 # Move required files to poe-hat directory
