@@ -26,7 +26,7 @@ rm -rf poe_hat_b-master
 # Create/Activate service
 [ -d /etc/systemd/system/poe-hat.service ] && rm -rf /etc/systemd/system/poe-hat.service
 
-PYTHON='which python3 |head -n1'
+PYTHON=`which python3 |head -n1`
 
 cat <<EOF >poe-hat.service
 [Unit]
