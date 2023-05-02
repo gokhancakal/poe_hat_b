@@ -18,7 +18,8 @@ For installation you must run the following commands.
 #### Installation
 
 <!--sec data-title="List files and directories: OS X and Linux" data-id="OSX_Linux_ls" data-collapse=true ces-->
-    wget https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip \
+    apt install wget unzip -y \
+    && wget https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip \
     && unzip -o  master.zip -d . \
     && cd poe_hat_b-master \
     && chmod +x install.sh \
