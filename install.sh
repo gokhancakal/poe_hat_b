@@ -2,7 +2,7 @@
 
 # Install required packages I
 apt update
-apt install -y python3-pip python3-venv python3-pil libatlas-base-dev raspi-config unzip
+apt install -y python3-pip python3-venv python3-pil libatlas-base-dev raspi-config
 
 # Create and activate python venv
 [ -d /opt/python_poe ] && rm -rf /opt/python_poe
