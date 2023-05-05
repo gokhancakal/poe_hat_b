@@ -7,6 +7,7 @@ For installation you must run the following commands.
 
 1. Run this command:
    ```sh
+   sudo apt-get install raspi-config
    sudo raspi-config
    ```
 2. Select Interfacing Options > I2C.
@@ -18,12 +19,12 @@ For installation you must run the following commands.
 #### Installation
 
 <!--sec data-title="List files and directories: OS X and Linux" data-id="OSX_Linux_ls" data-collapse=true ces-->
-    apt install wget unzip -y \
-    && wget https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip \
-    && unzip -o  master.zip -d . \
+    sudo apt install wget unzip -y \
+    && sudo wget https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip \
+    && sudo unzip -o  master.zip -d . \
     && cd poe_hat_b-master \
-    && chmod +x install.sh \
-    && ./install.sh
+    && sudo chmod +x install.sh \
+    && sudo ./install.sh
 <!--endsec-->
 
 #### Resources
