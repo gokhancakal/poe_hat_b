@@ -28,8 +28,7 @@
 #
 
 from smbus import SMBus
-import time
-# import numpy as np
+
 
 class SSD1306(object):
     def __init__(self, width=128, height=32, addr=0x3c):
@@ -122,16 +121,24 @@ class SSD1306(object):
                     newx = y
                     newy = self.height - x - 1
                     if pixels[x, y] == 0:
-                        buf[(newx + int(newy / 8 )*self.width) ] &= ~(1 << (y % 8))
+                        buf[(newx + int(newy / 8 )*self.width) ] &= ~(1 << (newy % 8))
         for x in range(self.Page * self.Column):
-            buf[x] = ~buf[x]
+            buf[x] = (~buf[x]) & 0xFF
         return buf
             
     def ShowImage(self, pBuf):
+        has_block = hasattr(self.bus, "write_i2c_block_data")
         for i in range(0, self.Page):            
             self.SendCommand(0xB0 + i) # set page address
             self.SendCommand(0x00) # set low column address
             self.SendCommand(0x10) # set high column address
-            # write data #
+            page_data = pBuf[self.width * i : self.width * (i + 1)]
+            if has_block:
+                try:
+                    for offset in range(0, len(page_data), 32):
+                        self.bus.write_i2c_block_data(self.addr, 0x40, page_data[offset:offset + 32])
+                    continue
+                except OSError:
+                    has_block = False
             for j in range(0, self.Column):
-                self.SendData(pBuf[j+self.width*i])
+                self.SendData(page_data[j])

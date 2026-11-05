@@ -1,0 +1,9 @@
+[poe]
+# Fan ON at or above this temperature (C).
+fan_on_temp = 43
+# Fan OFF strictly below this temperature (C).
+fan_off_temp = 41
+# Seconds between updates. Restart the service after editing.
+interval = 1
+# Seconds each page stays on screen before rotating.
+page_interval = 3
