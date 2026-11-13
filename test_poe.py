@@ -188,6 +188,18 @@ class PoeTests(unittest.TestCase):
             driver.ShowImage(buf)
             driver.Closebus()
 
+    def test_sh1106_oled_hat_gpiozero_pins(self):
+        import drivers.sh1106 as sh1106
+        output = Mock()
+        gpiozero = types.SimpleNamespace(OutputDevice=output)
+        with patch.dict(sys.modules, {'gpiozero': gpiozero}), \
+             patch.object(sh1106, '_GPIO_LIB', 'gpiozero'), \
+             patch.object(sh1106, 'spidev', types.SimpleNamespace(SpiDev=Mock())):
+            driver = SH1106()
+            self.assertEqual([call.args[0] for call in output.call_args_list], [25, 24])
+            driver.spi.open.assert_called_once_with(0, 0)
+            driver.Closebus()
+
     def test_page_rotation(self):
         self.poe.page_index = 0
         self.poe.last_page_switch = 100.0

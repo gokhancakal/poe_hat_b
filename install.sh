@@ -97,6 +97,10 @@ fi
 # Install required packages
 apt update
 apt install -y python3-pip python3-venv python3-dev build-essential libi2c-dev
+if [[ "$DISPLAY_TYPE" == "waveshare-1.3" ]]; then
+    # lgpio may need a source build (including Python 3.13 on aarch64).
+    apt install -y swig liblgpio-dev
+fi
 
 # Prepare dependencies before replacing the running installation.
 NEXT_VENV="$(mktemp -d /opt/python_poe.XXXXXXXX)"
@@ -113,8 +117,9 @@ python3 -m venv "$NEXT_VENV"
 "$NEXT_VENV/bin/python3" -m pip install -r "$SOURCE_DIR/requirements.txt"
 
 if [[ "$DISPLAY_TYPE" == "waveshare-1.3" ]]; then
-    "$NEXT_VENV/bin/python3" -m pip install spidev
-    "$NEXT_VENV/bin/python3" -m pip install RPi.GPIO gpiozero lgpio 2>/dev/null || true
+    # Use one supported GPIO backend; failures must stop installation.
+    "$NEXT_VENV/bin/python3" -m pip install spidev gpiozero lgpio
+    "$NEXT_VENV/bin/python3" -c 'import spidev, gpiozero, lgpio'
 fi
 
 "$NEXT_VENV/bin/python3" -c 'import PIL, psutil'
