@@ -52,6 +52,7 @@ class SH1106(object):
         self._init_spi()
 
     def _init_gpio(self):
+        gpio_error = None
         if self._gpio_mode == "RPi.GPIO":
             try:
                 GPIO.setmode(GPIO.BCM)
@@ -59,7 +60,8 @@ class SH1106(object):
                 GPIO.setup(self.rst_pin, GPIO.OUT)
                 GPIO.setup(self.dc_pin, GPIO.OUT)
                 return
-            except Exception:
+            except Exception as error:
+                gpio_error = error
                 self._gpio_mode = "gpiozero"
         if self._gpio_mode == "gpiozero":
             try:
@@ -67,15 +69,32 @@ class SH1106(object):
                 self._gpiozero_rst = OutputDevice(self.rst_pin, active_high=True, initial_value=True)
                 self._gpiozero_dc = OutputDevice(self.dc_pin, active_high=True, initial_value=False)
                 return
-            except Exception:
+            except Exception as error:
+                gpio_error = error
                 self._gpio_mode = "mock"
+        if self._gpio_mode == "mock":
+            error = RuntimeError(
+                "SH1106 requires working GPIO support (RPi.GPIO or gpiozero)"
+            )
+            if gpio_error is not None:
+                raise error from gpio_error
+            raise error
 
     def _init_spi(self):
-        if spidev is not None:
-            self.spi = spidev.SpiDev()
+        if spidev is None:
+            raise RuntimeError("SH1106 requires the spidev package")
+        self.spi = spidev.SpiDev()
+        try:
             self.spi.open(self.spi_bus_num, self.spi_dev_num)
             self.spi.max_speed_hz = self.spi_freq
             self.spi.mode = 0b00
+        except Exception:
+            try:
+                self.spi.close()
+            except Exception:
+                pass
+            self.spi = None
+            raise
 
     def _set_pin(self, pin_name, value):
         if self._gpio_mode == "RPi.GPIO":
@@ -100,21 +119,23 @@ class SH1106(object):
 
     def SendCommand(self, cmd):
         """Send command byte to SH1106 (DC = 0)."""
+        if self.spi is None:
+            raise RuntimeError("SH1106 SPI device is not initialized")
         self._set_pin("dc", False)
-        if self.spi is not None:
-            if isinstance(cmd, list):
-                self.spi.writebytes(cmd)
-            else:
-                self.spi.writebytes([cmd])
+        if isinstance(cmd, list):
+            self.spi.writebytes(cmd)
+        else:
+            self.spi.writebytes([cmd])
 
     def SendData(self, data):
         """Send data byte or list of bytes to SH1106 (DC = 1)."""
+        if self.spi is None:
+            raise RuntimeError("SH1106 SPI device is not initialized")
         self._set_pin("dc", True)
-        if self.spi is not None:
-            if isinstance(data, list):
-                self.spi.writebytes(data)
-            else:
-                self.spi.writebytes([data])
+        if isinstance(data, list):
+            self.spi.writebytes(data)
+        else:
+            self.spi.writebytes([data])
 
     def set_contrast(self, contrast=50):
         val = max(1, min(255, int(contrast)))

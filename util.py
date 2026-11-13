@@ -25,6 +25,7 @@ class PoeHatB:
         self.screen_on = True
         self.last_active_time = time.monotonic()
         self.manual_wake_until = 0.0
+        self.last_temp = None
         self.shift_index = 4
 
         self.fan_controller = get_fan_controller(self.fan_type, address=self.address)
@@ -47,11 +48,11 @@ class PoeHatB:
 
     def wake_display(self):
         """Wake up display from sleep mode."""
-        self.last_active_time = time.monotonic()
         if not self.screen_on:
             if self.show is not None:
                 self.show.wake()
             self.screen_on = True
+            self.last_active_time = time.monotonic()
 
     def sleep_display(self):
         """Put display to low-power blank sleep mode."""
@@ -246,22 +247,35 @@ class PoeHatB:
     def poe_hat_display(self, fan_temp, fan_off_temp=None, page_interval=3.0):
         if fan_off_temp is None:
             fan_off_temp = fan_temp - 2
+        previous_fan_mode = self.fan_mode
         temp = self.update_fan(fan_temp, fan_off_temp)
         if time.monotonic() < self.display_retry_at:
             return
 
         now = time.monotonic()
-        forced_awake = (
-            self.fan_mode == 1
-            or (temp is not None and temp >= fan_temp)
-            or now < self.manual_wake_until
+        fan_started = self.fan_mode == 1 and previous_fan_mode != 1
+        temp_reached_threshold = (
+            temp is not None and temp >= fan_temp
+            and (self.last_temp is None or self.last_temp < fan_temp)
         )
+        self.last_temp = temp
+        manual_wake_active = 0 < self.manual_wake_until and now < self.manual_wake_until
+        manual_wake_expired = 0 < self.manual_wake_until <= now
         try:
-            if forced_awake:
+            if manual_wake_active:
                 self.wake_display()
-            elif self.screen_timeout > 0 and now - self.last_active_time >= self.screen_timeout:
+            elif fan_started or temp_reached_threshold:
+                self.last_active_time = now
+                self.wake_display()
+            elif self.screen_timeout > 0 and (
+                manual_wake_expired
+                or now - self.last_active_time >= self.screen_timeout
+            ):
                 self.sleep_display()
+                self.manual_wake_until = 0.0
                 return
+            if manual_wake_expired:
+                self.manual_wake_until = 0.0
         except (OSError, ValueError, RuntimeError) as error:
             self.report_error("display", error)
             self.close_display()

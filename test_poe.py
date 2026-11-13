@@ -164,22 +164,29 @@ class PoeTests(unittest.TestCase):
         self.poe.render_page_1_64(draw)
         self.poe.render_page_2_64(draw)
         self.poe.render_page_3_64(draw, 45.0, 43.0, 41.0)
+        self.assertLessEqual(self.poe._get_text_width("FAN: ACTIVE"), 105)
         # Test 128x64 with fan disabled
         poe_nofan = util.PoeHatB(fan_type="none")
         poe_nofan.render_page_3_64(draw, 45.0, 43.0, 41.0)
         poe_nofan.render_page_3(draw, 45.0, 43.0, 41.0)
 
     def test_sh1106_driver(self):
-        driver = SH1106()
-        img = Image.new('1', (128, 64), 'WHITE')
-        buf = driver.getbuffer(img)
-        self.assertEqual(len(buf), 1024)
-        self.assertEqual(buf, [0] * 1024)
-        driver.Init()
-        driver.ClearBlack()
-        driver.ClearWhite()
-        driver.ShowImage(buf)
-        driver.Closebus()
+        import drivers.sh1106 as sh1106
+        gpio = Mock()
+        gpio.BCM = 1
+        gpio.OUT = 1
+        with patch.object(sh1106, '_GPIO_LIB', 'RPi.GPIO'), \
+             patch.object(sh1106, 'GPIO', gpio, create=True):
+            driver = SH1106()
+            img = Image.new('1', (128, 64), 'WHITE')
+            buf = driver.getbuffer(img)
+            self.assertEqual(len(buf), 1024)
+            self.assertEqual(buf, [0] * 1024)
+            driver.Init()
+            driver.ClearBlack()
+            driver.ClearWhite()
+            driver.ShowImage(buf)
+            driver.Closebus()
 
     def test_page_rotation(self):
         self.poe.page_index = 0
@@ -188,12 +195,12 @@ class PoeTests(unittest.TestCase):
         mock_show.getbuffer.return_value = [0] * 512
         self.poe.show = mock_show
         with patch.object(util.time, 'monotonic', return_value=101.0), \
-             patch.object(self.poe, 'update_fan'):
+             patch.object(self.poe, 'update_fan', return_value=35):
             self.poe.poe_hat_display(43, 41, page_interval=3.0)
             self.assertEqual(self.poe.page_index, 0)
 
         with patch.object(util.time, 'monotonic', return_value=103.5), \
-             patch.object(self.poe, 'update_fan'):
+             patch.object(self.poe, 'update_fan', return_value=35):
             self.poe.poe_hat_display(43, 41, page_interval=3.0)
             self.assertEqual(self.poe.page_index, 1)
 
@@ -212,19 +219,77 @@ class PoeTests(unittest.TestCase):
         display.ShowImage.assert_not_called()
         self.assertFalse(poe.screen_on)
 
-        poe.fan_mode = 1
+        def turn_fan_on(*args):
+            poe.fan_mode = 1
+            return 35
+
         with patch.object(util.time, 'monotonic', return_value=21), \
-             patch.object(poe, 'update_fan', return_value=35):
+             patch.object(poe, 'update_fan', side_effect=turn_fan_on):
             poe.poe_hat_display(43, 41)
         display.wake.assert_called_once()
         display.ShowImage.assert_called_once()
         self.assertTrue(poe.screen_on)
 
-    def test_manual_wake_expires(self):
+    def test_fan_does_not_prevent_display_timeout(self):
         poe = util.PoeHatB(screen_timeout=10)
+        poe.fan_mode = 1
+        poe.last_temp = 50
+        display = Mock(width=128, height=32)
+        poe.show = display
+        poe.last_active_time = 0
+
+        with patch.object(util.time, 'monotonic', return_value=10), \
+             patch.object(poe, 'update_fan', return_value=50):
+            poe.poe_hat_display(43, 41)
+        display.sleep.assert_called_once()
+        self.assertFalse(poe.screen_on)
+
+        with patch.object(util.time, 'monotonic', return_value=11), \
+             patch.object(poe, 'update_fan', return_value=50):
+            poe.poe_hat_display(43, 41)
+        display.wake.assert_not_called()
+        self.assertFalse(poe.screen_on)
+
+    def test_manual_wake_expires_at_60_seconds(self):
+        poe = util.PoeHatB(screen_timeout=300)
+        poe.fan_mode = 0
+        display = Mock(width=128, height=32)
+        poe.show = display
+        poe.screen_on = False
+        poe.last_active_time = 0
         with patch.object(util.time, 'monotonic', return_value=100):
             poe.request_wake(60)
         self.assertEqual(poe.manual_wake_until, 160)
+
+        with patch.object(util.time, 'monotonic', return_value=159), \
+             patch.object(poe, 'update_fan', return_value=35):
+            poe.poe_hat_display(43, 41)
+        self.assertTrue(poe.screen_on)
+        display.sleep.assert_not_called()
+
+        with patch.object(util.time, 'monotonic', return_value=160), \
+             patch.object(poe, 'update_fan', return_value=35):
+            poe.poe_hat_display(43, 41)
+        display.sleep.assert_called_once()
+        self.assertFalse(poe.screen_on)
+        self.assertEqual(poe.manual_wake_until, 0)
+
+    def test_sh1106_requires_gpio_and_spi(self):
+        from unittest.mock import Mock
+        import drivers.sh1106 as sh1106
+
+        with patch.object(sh1106, '_GPIO_LIB', 'mock'), \
+             self.assertRaisesRegex(RuntimeError, 'GPIO support'):
+            SH1106()
+
+        gpio = Mock()
+        gpio.BCM = 1
+        gpio.OUT = 1
+        with patch.object(sh1106, '_GPIO_LIB', 'RPi.GPIO'), \
+             patch.object(sh1106, 'GPIO', gpio, create=True), \
+             patch.object(sh1106, 'spidev', None), \
+             self.assertRaisesRegex(RuntimeError, 'spidev'):
+            SH1106()
 
     def test_pixel_shift_advances_on_page_rotation(self):
         self.poe.page_index = 0
@@ -234,7 +299,7 @@ class PoeTests(unittest.TestCase):
         display.getbuffer.return_value = [0] * 512
         self.poe.show = display
         with patch.object(util.time, 'monotonic', return_value=103.5), \
-             patch.object(self.poe, 'update_fan'), \
+             patch.object(self.poe, 'update_fan', return_value=35), \
              patch.object(util.ImageChops, 'offset', wraps=util.ImageChops.offset) as offset:
             self.poe.poe_hat_display(43, 41, page_interval=3)
         self.assertEqual(self.poe.shift_index, 5)

@@ -12,15 +12,36 @@ This installation is designed for **Power Over Ethernet HAT (Type B)** and **Wav
 
 #### Enable Interfaces
 
-1. **I2C Interface (required for `--display poe` and `--fan poe`):**
+I2C is required for `--display poe` and `--fan poe`. SPI is required for
+`--display waveshare-1.3`.
+
+**Using the raspi-config menu (Raspberry Pi OS):**
+
+1. Install and open raspi-config:
+   ```sh
+   sudo apt-get update
+   sudo apt-get install raspi-config
+   sudo raspi-config
+   ```
+2. Select **Interface Options** (or **Interfacing Options** on older releases),
+   then **I2C**, and enable it. Enable **SPI** here too if using the
+   `waveshare-1.3` display.
+3. Finish and reboot if prompted.
+
+**Using commands (Raspberry Pi OS):**
+
+Run the command(s) for the interface(s) used:
+
+1. **I2C:**
    ```sh
    sudo raspi-config nonint do_i2c 0
    ```
-2. **SPI Interface (required for `--display waveshare-1.3`):**
+2. **SPI:**
    ```sh
    sudo raspi-config nonint do_spi 0
    ```
-   *(Note: The installer automatically enables SPI if `--display waveshare-1.3` is selected).*
+The installer also attempts to enable SPI when `--display waveshare-1.3` is
+selected. A reboot may be required before the interfaces become available.
 
 #### Waveshare 1.3" OLED Pin Connections (4-wire SPI)
 
@@ -37,6 +58,18 @@ This installation is designed for **Power Over Ethernet HAT (Type B)** and **Wav
 *Note on Stacking: The PoE HAT (B) uses I2C-1 (GPIO 2, 3), while the 1.3" OLED uses SPI0 (GPIO 8, 10, 11) and GPIO 25/27. There are no electrical pin conflicts; both can be operated simultaneously with a 40-pin header extender or jumper wires.*
 
 #### Installation
+
+Download and extract the source on the Raspberry Pi:
+
+```sh
+sudo apt-get update
+sudo apt-get install wget unzip -y
+wget https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip
+unzip -o master.zip -d .
+cd poe_hat_b-master
+```
+
+Then install the default PoE HAT B setup, or choose a display and fan profile:
 
 ```sh
 # 1. Standard PoE HAT (B) installation (Default: 0.91" OLED + PoE Fan)

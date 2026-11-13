@@ -70,7 +70,7 @@ class View128x64:
 
             draw.text((4, 27), f"FAN ON  : >= {fan_temp:.0f}C", font=self.font, fill=0)
             draw.text((4, 39), f"FAN OFF : <  {fan_off_temp:.0f}C", font=self.font, fill=0)
-            draw.text((4, 52), "FAN CONTROL: ACTIVE", font=self.font, fill=0)
+            draw.text((4, 52), "FAN: ACTIVE", font=self.font, fill=0)
         else:
             draw.text((4, 27), "FAN HARDWARE : NONE", font=self.font, fill=0)
             draw.text((4, 39), "MODE: MONITOR ONLY", font=self.font, fill=0)
