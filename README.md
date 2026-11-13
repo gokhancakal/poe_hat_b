@@ -52,10 +52,10 @@ selected. A reboot may be required before the interfaces become available.
 | **DIN**  | Pin 19       | GPIO 10  | SPI0 MOSI|
 | **CLK**  | Pin 23       | GPIO 11  | SPI0 SCLK|
 | **CS**   | Pin 24       | GPIO 8   | SPI0 CE0 |
-| **DC**   | Pin 22       | GPIO 25  | Data/Command |
-| **RST**  | Pin 13       | GPIO 27  | Reset    |
+| **DC**   | Pin 18       | GPIO 24  | Data/Command |
+| **RST**  | Pin 22       | GPIO 25  | Reset    |
 
-*Note on Stacking: The PoE HAT (B) uses I2C-1 (GPIO 2, 3), while the 1.3" OLED uses SPI0 (GPIO 8, 10, 11) and GPIO 25/27. There are no electrical pin conflicts; both can be operated simultaneously with a 40-pin header extender or jumper wires.*
+*Note on Stacking: The PoE HAT (B) uses I2C-1 (GPIO 2, 3), while the 1.3" OLED uses SPI0 (GPIO 8, 10, 11) and GPIO 24/25. There are no electrical pin conflicts; both can be operated simultaneously with a 40-pin header extender or jumper wires.*
 
 #### Installation
 
@@ -64,7 +64,7 @@ Download and extract the source on the Raspberry Pi:
 ```sh
 sudo apt-get update
 sudo apt-get install wget unzip -y
-wget https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip
+wget -O master.zip https://github.com/gokhancakal/poe_hat_b/archive/refs/heads/master.zip
 unzip -o master.zip -d .
 cd poe_hat_b-master
 ```
@@ -81,6 +81,18 @@ sudo bash install.sh --display waveshare-1.3 --fan poe
 # 3. Waveshare 1.3" OLED without PoE HAT (Pi only / Passive cooling)
 sudo bash install.sh --display waveshare-1.3 --fan none
 ```
+
+The Waveshare profile installs `swig` and `liblgpio-dev` before building
+`lgpio`, and installs `spidev`, `gpiozero`, and `lgpio` into the service's
+virtual environment. No separate `RPi.GPIO` installation is required.
+Dependency installation and import checks must succeed before the running
+service is stopped or replaced. If they fail, correct the reported error and
+rerun the installer; do not ignore the failure.
+
+The OLED HAT uses BCM **RST=25** and **DC=24** (physical pins 22 and 18).
+These are different from the Waveshare 1.3-inch LCD HAT pins. Custom wiring
+must match the driver pins. The download command uses `wget -O master.zip`
+to replace an older archive instead of saving a new `master.zip.1`.
 
 #### Resources
 
@@ -184,7 +196,7 @@ poe_hat_b/
 #### Validation
 
 ```sh
-python3 -m unittest test_poe -v
+python3 -m unittest test_poe test_install -v
 bash -n install.sh
 ```
 

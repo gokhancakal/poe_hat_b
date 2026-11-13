@@ -26,13 +26,13 @@ class SH1106(object):
     """
     Driver for SH1106 1.3 inch OLED (128x64) via 4-wire SPI.
     Standard Waveshare 1.3inch OLED HAT pinout:
-      - RST (Reset): GPIO 27 (Pin 13)
-      - DC (Data/Command): GPIO 25 (Pin 22)
+      - RST (Reset): GPIO 25 (Pin 22)
+      - DC (Data/Command): GPIO 24 (Pin 18)
       - CS (Chip Select): GPIO 8 / CE0 (Pin 24)
       - DIN (MOSI): GPIO 10 (Pin 19)
       - CLK (SCLK): GPIO 11 (Pin 23)
     """
-    def __init__(self, rst=27, dc=25, cs=8, spi_bus=0, spi_device=0, spi_freq=10000000):
+    def __init__(self, rst=25, dc=24, cs=8, spi_bus=0, spi_device=0, spi_freq=10000000):
         self.width = 128
         self.height = 64
         self.Column = 128
