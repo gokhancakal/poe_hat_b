@@ -1,31 +1,8 @@
 # /*****************************************************************************
-# * | File        :	  SSD1306.py
-# * | Author      :   Waveshare team
-# * | Function    :   SSD1306
-# * | Info        :
-# *----------------
-# * | This version:   V1.0
-# * | Date        :   2019-11-14
-# * | Info        :   
+# * | File        :	  ssd1306.py
+# * | Author      :   Waveshare team / Poe Hat B project
+# * | Function    :   SSD1306 0.91inch OLED (128x32) I2C Driver
 # ******************************************************************************/
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documnetation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to  whom the Software is
-# furished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS OR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-#
 
 from smbus import SMBus
 
@@ -39,25 +16,40 @@ class SSD1306(object):
         self.addr = addr
         self.bus = SMBus(1)
 
-    def SendCommand(self, cmd):# write command
+    def SendCommand(self, cmd):  # write command
         self.bus.write_byte_data(self.addr, 0x00, cmd)
 
-    def SendData(self, cmd):# write ram
+    def SendData(self, cmd):  # write ram
         self.bus.write_byte_data(self.addr, 0x40, cmd)
 
     def Closebus(self):
-        self.bus.close()
+        if self.bus is not None:
+            try:
+                self.bus.close()
+            except Exception:
+                pass
+            self.bus = None
 
-    def Init(self):
+    def set_contrast(self, contrast=50):
+        val = max(1, min(255, int(contrast)))
+        self.SendCommand(0x81)
+        self.SendCommand(val)
+
+    def sleep(self):
         self.SendCommand(0xAE)
 
-        self.SendCommand(0x40) # set low column address
-        self.SendCommand(0xB0) # set high column address
+    def wake(self):
+        self.SendCommand(0xAF)
 
-        self.SendCommand(0xC8) # not offset
+    def Init(self, contrast=50):
+        self.SendCommand(0xAE)
 
-        self.SendCommand(0x81)
-        self.SendCommand(0xff)
+        self.SendCommand(0x40)  # set low column address
+        self.SendCommand(0xB0)  # set high column address
+
+        self.SendCommand(0xC8)  # not offset
+
+        self.set_contrast(contrast)
 
         self.SendCommand(0xa1)
 
@@ -107,31 +99,28 @@ class SSD1306(object):
         image_monocolor = image.convert('1')
         imwidth, imheight = image_monocolor.size
         pixels = image_monocolor.load()
-        if(imwidth == self.width and imheight == self.height):
-            # print ("Horizontal screen")
+        if imwidth == self.width and imheight == self.height:
             for y in range(imheight):
                 for x in range(imwidth):
-                    # Set the bits for the column of pixels at the current position.
                     if pixels[x, y] == 0:
                         buf[x + int(y / 8) * self.width] &= ~(1 << (y % 8))
-        elif(imwidth == self.height and imheight == self.width):
-            # print ("Vertical screen")
+        elif imwidth == self.height and imheight == self.width:
             for y in range(imheight):
                 for x in range(imwidth):
                     newx = y
                     newy = self.height - x - 1
                     if pixels[x, y] == 0:
-                        buf[(newx + int(newy / 8 )*self.width) ] &= ~(1 << (newy % 8))
+                        buf[(newx + int(newy / 8) * self.width)] &= ~(1 << (newy % 8))
         for x in range(self.Page * self.Column):
             buf[x] = (~buf[x]) & 0xFF
         return buf
-            
+
     def ShowImage(self, pBuf):
         has_block = hasattr(self.bus, "write_i2c_block_data")
         for i in range(0, self.Page):            
-            self.SendCommand(0xB0 + i) # set page address
-            self.SendCommand(0x00) # set low column address
-            self.SendCommand(0x10) # set high column address
+            self.SendCommand(0xB0 + i)  # set page address
+            self.SendCommand(0x00)  # set low column address
+            self.SendCommand(0x10)  # set high column address
             page_data = pBuf[self.width * i : self.width * (i + 1)]
             if has_block:
                 try:

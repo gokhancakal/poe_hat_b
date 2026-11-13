@@ -1,17 +1,35 @@
-import smbus
-import psutil
-import socket
-import logging
-import time
 import math
-from PIL import Image, ImageDraw, ImageFont
-import SSD1306
+import logging
+import socket
+import time
+import psutil
+import smbus
+from PIL import Image, ImageDraw, ImageFont, ImageChops
+
+import drivers
+from controllers import get_fan_controller, PoeFanController, DummyFanController
+from renderers import draw_progress_bar, get_text_width, View128x32, View128x64
+
 
 class PoeHatB:
-    def __init__(self, address=0x20):
-        self.i2c = smbus.SMBus(1)
+    draw_progress_bar = staticmethod(draw_progress_bar)
+
+    def __init__(self, address=0x20, display_type="poe", fan_type="poe",
+                 contrast=50, pixel_shift=True, screen_timeout=0.0):
+        self.display_type = str(display_type).strip().lower()
+        self.fan_type = str(fan_type).strip().lower()
         self.address = address
-        self.fan_mode = None
+        self.contrast = max(1, min(255, int(contrast)))
+        self.pixel_shift = bool(pixel_shift)
+        self.screen_timeout = max(0.0, float(screen_timeout))
+        self.screen_on = True
+        self.last_active_time = time.monotonic()
+        self.manual_wake_until = 0.0
+        self.shift_index = 4
+
+        self.fan_controller = get_fan_controller(self.fan_type, address=self.address)
+        self.fan_enabled = self.fan_controller.enabled
+
         self.show = None
         self.display_retry_at = 0
         self.errors = set()
@@ -20,13 +38,49 @@ class PoeHatB:
         self._ip_cache_at = 0
         self.page_index = 0
         self.last_page_switch = time.monotonic()
-        try:
-            self.fan_on()
-        except OSError:
-            self.i2c.close()
-            raise
+
+        self.renderer_32 = View128x32(self.font)
+        self.renderer_64 = View128x64(self.font)
+
         psutil.cpu_percent(None)
         self.cpu_ready = False
+
+    def wake_display(self):
+        """Wake up display from sleep mode."""
+        self.last_active_time = time.monotonic()
+        if not self.screen_on:
+            if self.show is not None:
+                self.show.wake()
+            self.screen_on = True
+
+    def sleep_display(self):
+        """Put display to low-power blank sleep mode."""
+        if self.screen_on:
+            if self.show is not None:
+                self.show.sleep()
+            self.screen_on = False
+
+    def request_wake(self, duration=60):
+        self.manual_wake_until = max(
+            self.manual_wake_until, time.monotonic() + max(0.0, duration)
+        )
+
+    @property
+    def i2c(self):
+        return getattr(self.fan_controller, "i2c", None)
+
+    @i2c.setter
+    def i2c(self, value):
+        if hasattr(self.fan_controller, "i2c"):
+            self.fan_controller.i2c = value
+
+    @property
+    def fan_mode(self):
+        return self.fan_controller.fan_mode
+
+    @fan_mode.setter
+    def fan_mode(self, value):
+        self.fan_controller.fan_mode = value
 
     def __enter__(self):
         return self
@@ -36,16 +90,14 @@ class PoeHatB:
         return False
 
     def fan_on(self):
-        if self.fan_mode != 1:
-            self.i2c.write_byte(self.address, 0xFE & self.i2c.read_byte(self.address))
-            self.fan_mode = 1
-            logging.info("Fan ON")
+        if not self.fan_enabled:
+            return
+        self.fan_controller.fan_on()
 
     def fan_off(self):
-        if self.fan_mode != 0:
-            self.i2c.write_byte(self.address, 0x01 | self.i2c.read_byte(self.address))
-            self.fan_mode = 0
-            logging.info("Fan OFF")
+        if not self.fan_enabled:
+            return
+        self.fan_controller.fan_off()
 
     def get_ip(self):
         now = time.monotonic()
@@ -89,17 +141,14 @@ class PoeHatB:
         except (OSError, ValueError) as error:
             self.report_error("temperature", error)
             temp = None
-        try:
-            if temp is None or temp >= fan_temp:
-                self.fan_on()
-            elif temp < fan_off_temp:
-                self.fan_off()
-            elif self.fan_mode is None:
-                self.fan_on()
-            self.report_error("fan")
-        except OSError as error:
-            self.fan_mode = None
-            self.report_error("fan", error)
+
+        if self.fan_enabled:
+            try:
+                self.fan_controller.update(temp, fan_temp, fan_off_temp)
+                self.report_error("fan")
+            except OSError as error:
+                self.fan_controller.fan_mode = None
+                self.report_error("fan", error)
         return temp
 
     def get_hostname(self):
@@ -128,21 +177,7 @@ class PoeHatB:
             return f"{minutes}m"
 
     def _get_text_width(self, text):
-        bbox = self.font.getbbox(text)
-        return bbox[2] - bbox[0]
-
-    @staticmethod
-    def draw_progress_bar(draw, x, y, width, height, percent):
-        pct = max(0.0, min(100.0, float(percent)))
-        draw.rectangle((x, y, x + width - 1, y + height - 1), outline=0)
-        inner_width = max(0, width - 4)
-        inner_height = max(0, height - 4)
-        fill_width = int(round((pct / 100.0) * inner_width))
-        if fill_width > 0:
-            draw.rectangle(
-                (x + 2, y + 2, x + 2 + fill_width - 1, y + 2 + inner_height - 1),
-                fill=0
-            )
+        return get_text_width(self.font, text)
 
     def render_page_1(self, draw):
         """Sayfa 1: IP, Hostname ve Uptime."""
@@ -156,16 +191,7 @@ class PoeHatB:
 
         hostname = self.get_hostname()
         uptime_str = self.get_uptime()
-
-        draw.text((4, 2), "IP:", font=self.font, fill=0)
-        draw.text((36, 2), str(ip), font=self.font, fill=0)
-
-        draw.text((4, 12), "HOST:", font=self.font, fill=0)
-        draw.text((36, 12), str(hostname), font=self.font, fill=0)
-
-        draw.text((4, 22), "UP:", font=self.font, fill=0)
-        draw.text((36, 22), str(uptime_str), font=self.font, fill=0)
-        draw.text((109, 22), "1/3", font=self.font, fill=0)
+        self.renderer_32.render_page_1(draw, ip, hostname, uptime_str)
 
     def render_page_2(self, draw):
         """Sayfa 2: CPU ve RAM Barları."""
@@ -177,44 +203,45 @@ class PoeHatB:
             memory = cpu = None
             self.report_error("metrics", error)
 
-        cpu_val = 0.0 if cpu is None else cpu
-        ram_val = 0.0 if memory is None else memory
-        s_cpu = f"CPU {cpu_val:.0f}%" if cpu is not None else "CPU --%"
-        s_ram = f"RAM {ram_val:.0f}%" if memory is not None else "RAM --%"
-
-        w_cpu = self._get_text_width(s_cpu)
-        w_ram = self._get_text_width(s_ram)
-
-        draw.text((4 + (56 - w_cpu) // 2, 2), s_cpu, font=self.font, fill=0)
-        draw.text((68 + (56 - w_ram) // 2, 2), s_ram, font=self.font, fill=0)
-
-        self.draw_progress_bar(draw, 4, 12, 56, 7, cpu_val)
-        self.draw_progress_bar(draw, 68, 12, 56, 7, ram_val)
-
-        status = "LOAD HIGH" if (cpu_val > 80 or ram_val > 85) else "LOAD NORMAL"
-        draw.text((4, 22), status, font=self.font, fill=0)
-        draw.text((109, 22), "2/3", font=self.font, fill=0)
+        self.renderer_32.render_page_2(draw, cpu, memory)
 
     def render_page_3(self, draw, temp, fan_temp, fan_off_temp):
-        """Sayfa 3: Sıcaklık ve Fan (Termal Bar)."""
-        temp_val = 30.0 if temp is None else temp
-        s_temp = f"TEMP: {temp_val:.1f}C" if temp is not None else "TEMP: --.-C"
-        s_fan = "[FAN ON]" if self.fan_mode == 1 else "[FAN OFF]" if self.fan_mode == 0 else "[FAN --]"
-        w_fan = self._get_text_width(s_fan)
+        """Sayfa 3: Sıcaklık ve Fan (Termal Bar - 128x32)."""
+        self.renderer_32.render_page_3(
+            draw, temp, self.fan_mode, fan_temp, fan_off_temp, fan_enabled=self.fan_enabled
+        )
 
-        draw.text((4, 2), s_temp, font=self.font, fill=0)
-        draw.text((124 - w_fan, 2), s_fan, font=self.font, fill=0)
+    def render_page_1_64(self, draw):
+        """Sayfa 1 (128x64): Ağ & Sistem Bilgisi."""
+        try:
+            ip = self.get_ip()
+            self.report_error("network")
+        except OSError as error:
+            self._ip_cache = None
+            ip = "--"
+            self.report_error("network", error)
 
-        min_t, max_t = 30.0, 75.0
-        pct = max(0.0, min(100.0, ((temp_val - min_t) / (max_t - min_t)) * 100.0))
-        self.draw_progress_bar(draw, 4, 12, 120, 7, pct)
+        hostname = self.get_hostname()
+        uptime_str = self.get_uptime()
+        self.renderer_64.render_page_1(draw, ip, hostname, uptime_str)
 
-        thresh_pct = (fan_temp - min_t) / (max_t - min_t)
-        tick_x = int(round(4 + 2 + thresh_pct * (120 - 4)))
-        draw.line([(tick_x, 10), (tick_x, 20)], fill=0, width=1)
+    def render_page_2_64(self, draw):
+        """Sayfa 2 (128x64): İşlemci & Bellek Barları."""
+        try:
+            memory = self.get_memory()
+            cpu = self.get_cpu()
+            self.report_error("metrics")
+        except (OSError, ValueError, psutil.Error) as error:
+            memory = cpu = None
+            self.report_error("metrics", error)
 
-        draw.text((4, 22), f"ON>={fan_temp:.0f}C OFF<{fan_off_temp:.0f}C", font=self.font, fill=0)
-        draw.text((109, 22), "3/3", font=self.font, fill=0)
+        self.renderer_64.render_page_2(draw, cpu, memory)
+
+    def render_page_3_64(self, draw, temp, fan_temp, fan_off_temp):
+        """Sayfa 3 (128x64): Sıcaklık ve Fan (Termal Bar)."""
+        self.renderer_64.render_page_3(
+            draw, temp, self.fan_mode, fan_temp, fan_off_temp, fan_enabled=self.fan_enabled
+        )
 
     def poe_hat_display(self, fan_temp, fan_off_temp=None, page_interval=3.0):
         if fan_off_temp is None:
@@ -224,27 +251,74 @@ class PoeHatB:
             return
 
         now = time.monotonic()
+        forced_awake = (
+            self.fan_mode == 1
+            or (temp is not None and temp >= fan_temp)
+            or now < self.manual_wake_until
+        )
+        try:
+            if forced_awake:
+                self.wake_display()
+            elif self.screen_timeout > 0 and now - self.last_active_time >= self.screen_timeout:
+                self.sleep_display()
+                return
+        except (OSError, ValueError, RuntimeError) as error:
+            self.report_error("display", error)
+            self.close_display()
+            self.display_retry_at = time.monotonic() + 30
+            return
+
         if now - self.last_page_switch >= page_interval:
             self.page_index = (self.page_index + 1) % 3
             self.last_page_switch = now
+            self.shift_index = (self.shift_index + 1) % 9
 
         try:
             if self.show is None:
-                self.show = SSD1306.SSD1306()
-                self.show.Init()
+                if self.display_type == "waveshare-1.3":
+                    self.show = drivers.SH1106()
+                else:
+                    self.show = drivers.SSD1306()
+                self.show.Init(self.contrast)
+                self.screen_on = True
             image = Image.new('1', (self.show.width, self.show.height), "WHITE")
             draw = ImageDraw.Draw(image)
 
-            if self.page_index == 0:
-                self.render_page_1(draw)
-            elif self.page_index == 1:
-                self.render_page_2(draw)
+            if getattr(self.show, "height", 32) == 64:
+                if self.page_index == 0:
+                    self.render_page_1_64(draw)
+                elif self.page_index == 1:
+                    self.render_page_2_64(draw)
+                else:
+                    self.render_page_3_64(draw, temp, fan_temp, fan_off_temp)
             else:
-                self.render_page_3(draw, temp, fan_temp, fan_off_temp)
+                if self.page_index == 0:
+                    self.render_page_1(draw)
+                elif self.page_index == 1:
+                    self.render_page_2(draw)
+                else:
+                    self.render_page_3(draw, temp, fan_temp, fan_off_temp)
 
+            if self.pixel_shift:
+                dx = self.shift_index % 3 - 1
+                dy = self.shift_index // 3 - 1
+                image = ImageChops.offset(image, dx, dy)
+                shifted_draw = ImageDraw.Draw(image)
+                if dx > 0:
+                    shifted_draw.rectangle((0, 0, 0, image.height - 1), fill=1)
+                elif dx < 0:
+                    shifted_draw.rectangle(
+                        (image.width - 1, 0, image.width - 1, image.height - 1), fill=1
+                    )
+                if dy > 0:
+                    shifted_draw.rectangle((0, 0, image.width - 1, 0), fill=1)
+                elif dy < 0:
+                    shifted_draw.rectangle(
+                        (0, image.height - 1, image.width - 1, image.height - 1), fill=1
+                    )
             self.show.ShowImage(self.show.getbuffer(image))
             self.report_error("display")
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, RuntimeError) as error:
             self.report_error("display", error)
             self.close_display()
             self.display_retry_at = time.monotonic() + 30
@@ -253,16 +327,15 @@ class PoeHatB:
         if self.show is not None:
             try:
                 self.show.Closebus()
-            except OSError:
+            except Exception:
                 pass
             self.show = None
 
     def close(self):
         try:
-            self.fan_on()
+            if self.fan_enabled:
+                self.fan_controller.close()
         except OSError as error:
-            self.fan_mode = None
             self.report_error("fan", error)
         finally:
             self.close_display()
-            self.i2c.close()
