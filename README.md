@@ -160,27 +160,28 @@ availability and I2C setup steps can differ by distribution.
 
 The project is structured into clean, modular packages:
 
-```
+```text
 poe_hat_b/
-├── drivers/                  # Hardware display drivers
-│   ├── __init__.py           # Exports SSD1306, SH1106
-│   ├── ssd1306.py            # 0.91" 128x32 I2C OLED driver
-│   └── sh1106.py             # 1.3" 128x64 4-wire SPI OLED driver
-├── controllers/              # Fan controllers
-│   ├── __init__.py           # get_fan_controller factory
-│   ├── poe_fan.py            # I2C PCF8574 fan controller (PoE HAT)
-│   └── dummy_fan.py          # No-op fan controller (passive / none)
-├── renderers/                # UI rendering engines
-│   ├── __init__.py           # View renderers and drawing helpers
-│   ├── common.py             # Progress bars, geometric primitives, metrics
-│   ├── view_128x32.py        # 128x32 3-page layout
-│   └── view_128x64.py        # 128x64 3-page layout
-├── util.py                   # System metrics, hardware coordinator
-├── main.py                   # Service entry point & config loader
-├── install.sh                # Deployment and systemd installer script
-├── test_poe.py               # Automated unit test suite
-├── config.ini.example        # Configuration template
-└── README.md
+|-- drivers/                  # Hardware display drivers
+|   |-- __init__.py           # Exports SSD1306, SH1106
+|   |-- ssd1306.py            # 0.91" 128x32 I2C OLED driver
+|   `-- sh1106.py             # 1.3" 128x64 4-wire SPI OLED driver
+|-- controllers/              # Fan controllers
+|   |-- __init__.py           # get_fan_controller factory
+|   |-- poe_fan.py            # I2C PCF8574 fan controller (PoE HAT)
+|   `-- dummy_fan.py          # No-op fan controller (passive / none)
+|-- renderers/                # OLED page renderers
+|   |-- __init__.py           # View renderers and drawing helpers
+|   |-- common.py             # Progress bars, text fitting, load status
+|   |-- view_128x32.py        # 128x32 three-page layout
+|   `-- view_128x64.py        # 128x64 three-page layout
+|-- buttons.py                # OLED HAT GPIO buttons and event queue
+|-- util.py                   # System metrics and hardware coordinator
+|-- main.py                   # Service entry point and config loader
+|-- install.sh                # Deployment and systemd installer
+|-- test_poe.py               # Automated test suite
+|-- config.ini.example        # Configuration template
+`-- README.md
 ```
 
 #### Validation
@@ -255,7 +256,7 @@ CPU/RAM are sampled at `interval` independently of the visible page and sleep.
 Unavailable metrics display `LOAD UNKNOWN`; `IP AVAILABLE` means a local source
 address was found, not that internet connectivity was verified. Long hostname
 and uptime text is shortened with `~` to fit the screen. Brightness buttons stop
-at the available steps; an explicit configured value outside 10�100 is retained
+at the available steps; an explicit configured value outside 10–100 is retained
 when there is no step in the requested direction.
 Waveshare installation requires gpiozero/lgpio and reports installation failures
 before replacing the running service. RPi.GPIO remains an optional display backend.
