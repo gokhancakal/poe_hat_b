@@ -23,3 +23,19 @@ def draw_progress_bar(draw, x, y, width, height, percent):
             (x + 2, y + 2, x + 2 + fill_width - 1, y + 2 + inner_height - 1),
             fill=0
         )
+
+
+def fit_text(font, text, width):
+    """Shorten variable text to its column, leaving room for pixel shifting."""
+    text = str(text)
+    if get_text_width(font, text) <= width:
+        return text
+    while text and get_text_width(font, text + '~') > width:
+        text = text[:-1]
+    return text + '~'
+
+
+def load_status(cpu, memory):
+    if cpu is None or memory is None:
+        return "LOAD UNKNOWN"
+    return "LOAD HIGH" if cpu > 80 or memory > 85 else "LOAD NORMAL"

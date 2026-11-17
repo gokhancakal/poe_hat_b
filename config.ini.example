@@ -10,10 +10,11 @@ fan_off_temp = 41
 # Seconds between updates. Restart the service after editing.
 interval = 1
 # Seconds each page stays on screen before rotating.
-page_interval = 3
+page_interval = 5
 # OLED contrast (1-255).
 contrast = 50
 # Shift the rendered image by one pixel as pages rotate.
 pixel_shift = true
-# Turn off the display after this many seconds. 0 keeps it always on.
+# Seconds since activity before sleep. 0 disables timeout.
+# New Waveshare installations use 60; explicit existing values are preserved.
 screen_timeout = 0

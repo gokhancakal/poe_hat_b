@@ -7,6 +7,8 @@ import smbus
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 
 import drivers
+from buttons import OLEDButtons
+from queue import Empty
 from controllers import get_fan_controller, PoeFanController, DummyFanController
 from renderers import draw_progress_bar, get_text_width, View128x32, View128x64
 
@@ -15,14 +17,17 @@ class PoeHatB:
     draw_progress_bar = staticmethod(draw_progress_bar)
 
     def __init__(self, address=0x20, display_type="poe", fan_type="poe",
-                 contrast=50, pixel_shift=True, screen_timeout=0.0):
+                 contrast=50, pixel_shift=True, screen_timeout=None):
         self.display_type = str(display_type).strip().lower()
         self.fan_type = str(fan_type).strip().lower()
         self.address = address
         self.contrast = max(1, min(255, int(contrast)))
         self.pixel_shift = bool(pixel_shift)
-        self.screen_timeout = max(0.0, float(screen_timeout))
+        self.screen_timeout = max(0.0, float(
+            (60 if self.display_type == "waveshare-1.3" else 0)
+            if screen_timeout is None else screen_timeout))
         self.screen_on = True
+        self.sleep_pending = False
         self.last_active_time = time.monotonic()
         self.manual_wake_until = 0.0
         self.last_temp = None
@@ -44,27 +49,85 @@ class PoeHatB:
         self.renderer_64 = View128x64(self.font)
 
         psutil.cpu_percent(None)
+        self.cached_cpu = None
+        self.cached_memory = None
         self.cpu_ready = False
+        self.manual_page = False
+        self.buttons = None
+        if self.display_type == "waveshare-1.3":
+            try:
+                self.buttons = OLEDButtons()
+            except Exception as error:
+                logging.warning("OLED buttons unavailable; fan control continues: %s", error)
 
     def wake_display(self):
         """Wake up display from sleep mode."""
         if not self.screen_on:
-            if self.show is not None:
-                self.show.wake()
+            self.sleep_pending = False
+            # Record desired state before I/O so recovery retries a failed wake.
             self.screen_on = True
             self.last_active_time = time.monotonic()
+            if self.display_type == "waveshare-1.3":
+                self.manual_page = False
+                self.last_page_switch = self.last_active_time
+            if self.show is not None:
+                self.show.wake()
+
+    def ensure_display(self):
+        if self.show is None:
+            self.show = (drivers.SH1106() if self.display_type == "waveshare-1.3"
+                         else drivers.SSD1306())
+            self.show.Init(self.contrast)
 
     def sleep_display(self):
-        """Put display to low-power blank sleep mode."""
+        """Remember the requested state until the hardware confirms sleep."""
         if self.screen_on:
-            if self.show is not None:
-                self.show.sleep()
+            self.sleep_pending = self.show is not None or self.display_retry_at > 0
             self.screen_on = False
+        if self.sleep_pending and time.monotonic() >= self.display_retry_at:
+            self.ensure_display()
+            self.show.sleep()
+            self.sleep_pending = False
+            self.report_error("display")
 
     def request_wake(self, duration=60):
         self.manual_wake_until = max(
             self.manual_wake_until, time.monotonic() + max(0.0, duration)
         )
+
+    def process_buttons(self, now):
+        changed = False
+        if self.buttons is None:
+            return changed
+        while True:
+            try:
+                action = self.buttons.events.get_nowait()
+            except Empty:
+                return changed
+            changed = True
+            self.last_active_time = now
+            self.manual_wake_until = 0.0
+            if not self.screen_on:
+                self.manual_page = False
+                self.last_page_switch = now
+                self.wake_display()
+                continue  # First press only wakes, including center/brightness.
+            if action == 'center':
+                self.sleep_display()
+            elif action in ('up', 'down'):
+                levels = (10, 25, 50, 75, 100)
+                if action == 'up':
+                    self.contrast = next((v for v in levels if v > self.contrast), self.contrast)
+                else:
+                    self.contrast = next((v for v in reversed(levels) if v < self.contrast), self.contrast)
+                if self.show is not None:
+                    self.show.set_contrast(self.contrast)
+            else:
+                pages = {'key1': 0, 'key2': 1, 'key3': 2}
+                self.page_index = pages.get(action, (self.page_index +
+                    (-1 if action == 'left' else 1)) % 3)
+                self.manual_page = True
+                self.last_page_switch = now
 
     @property
     def i2c(self):
@@ -118,6 +181,15 @@ class PoeHatB:
             self.cpu_ready = True
             return None
         return cpu
+
+    def update_metrics(self):
+        try:
+            self.cached_memory = self.get_memory()
+            self.cached_cpu = self.get_cpu()
+            self.report_error("metrics")
+        except (OSError, ValueError, psutil.Error) as error:
+            self.cached_memory = self.cached_cpu = None
+            self.report_error("metrics", error)
 
     def get_temp(self):
         with open('/sys/class/thermal/thermal_zone0/temp', 'rt') as f:
@@ -196,13 +268,7 @@ class PoeHatB:
 
     def render_page_2(self, draw):
         """Sayfa 2: CPU ve RAM Barları."""
-        try:
-            memory = self.get_memory()
-            cpu = self.get_cpu()
-            self.report_error("metrics")
-        except (OSError, ValueError, psutil.Error) as error:
-            memory = cpu = None
-            self.report_error("metrics", error)
+        cpu, memory = self.cached_cpu, self.cached_memory
 
         self.renderer_32.render_page_2(draw, cpu, memory)
 
@@ -228,13 +294,7 @@ class PoeHatB:
 
     def render_page_2_64(self, draw):
         """Sayfa 2 (128x64): İşlemci & Bellek Barları."""
-        try:
-            memory = self.get_memory()
-            cpu = self.get_cpu()
-            self.report_error("metrics")
-        except (OSError, ValueError, psutil.Error) as error:
-            memory = cpu = None
-            self.report_error("metrics", error)
+        cpu, memory = self.cached_cpu, self.cached_memory
 
         self.renderer_64.render_page_2(draw, cpu, memory)
 
@@ -244,14 +304,13 @@ class PoeHatB:
             draw, temp, self.fan_mode, fan_temp, fan_off_temp, fan_enabled=self.fan_enabled
         )
 
-    def poe_hat_display(self, fan_temp, fan_off_temp=None, page_interval=3.0):
+    def poe_hat_display(self, fan_temp, fan_off_temp=None, page_interval=5.0, sample=True):
         if fan_off_temp is None:
             fan_off_temp = fan_temp - 2
         previous_fan_mode = self.fan_mode
-        temp = self.update_fan(fan_temp, fan_off_temp)
-        if time.monotonic() < self.display_retry_at:
-            return
-
+        temp = self.update_fan(fan_temp, fan_off_temp) if sample else self.last_temp
+        if sample:
+            self.update_metrics()
         now = time.monotonic()
         fan_started = self.fan_mode == 1 and previous_fan_mode != 1
         temp_reached_threshold = (
@@ -261,10 +320,14 @@ class PoeHatB:
         self.last_temp = temp
         manual_wake_active = 0 < self.manual_wake_until and now < self.manual_wake_until
         manual_wake_expired = 0 < self.manual_wake_until <= now
+        was_on = self.screen_on
         try:
+            changed = self.process_buttons(now)
+            if changed:
+                manual_wake_active = manual_wake_expired = False
             if manual_wake_active:
                 self.wake_display()
-            elif fan_started or temp_reached_threshold:
+            elif self.display_type != "waveshare-1.3" and (fan_started or temp_reached_threshold):
                 self.last_active_time = now
                 self.wake_display()
             elif self.screen_timeout > 0 and (
@@ -274,6 +337,8 @@ class PoeHatB:
                 self.sleep_display()
                 self.manual_wake_until = 0.0
                 return
+            if not self.screen_on and self.sleep_pending:
+                self.sleep_display()
             if manual_wake_expired:
                 self.manual_wake_until = 0.0
         except (OSError, ValueError, RuntimeError) as error:
@@ -282,19 +347,27 @@ class PoeHatB:
             self.display_retry_at = time.monotonic() + 30
             return
 
-        if now - self.last_page_switch >= page_interval:
+        if now < self.display_retry_at:
+            return
+        if not self.screen_on:
+            return
+
+        redraw = sample or changed or not was_on or self.show is None
+        if now - self.last_page_switch >= page_interval and not self.manual_page:
+            redraw = True
             self.page_index = (self.page_index + 1) % 3
             self.last_page_switch = now
+            if self.display_type != "waveshare-1.3":
+                self.shift_index = (self.shift_index + 1) % 9
+        if self.display_type == "waveshare-1.3" and now - getattr(self, 'last_shift', 0) >= page_interval:
             self.shift_index = (self.shift_index + 1) % 9
+            self.last_shift = now
+            redraw = True
 
+        if not redraw:
+            return
         try:
-            if self.show is None:
-                if self.display_type == "waveshare-1.3":
-                    self.show = drivers.SH1106()
-                else:
-                    self.show = drivers.SSD1306()
-                self.show.Init(self.contrast)
-                self.screen_on = True
+            self.ensure_display()
             image = Image.new('1', (self.show.width, self.show.height), "WHITE")
             draw = ImageDraw.Draw(image)
 
@@ -352,4 +425,6 @@ class PoeHatB:
         except OSError as error:
             self.report_error("fan", error)
         finally:
+            if self.buttons is not None:
+                self.buttons.close()
             self.close_display()

@@ -129,5 +129,9 @@ class SSD1306(object):
                     continue
                 except OSError:
                     has_block = False
+                    # A previous block may already have advanced the column.
+                    self.SendCommand(0xB0 + i)
+                    self.SendCommand(0x00)
+                    self.SendCommand(0x10)
             for j in range(0, self.Column):
                 self.SendData(page_data[j])

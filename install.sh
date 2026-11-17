@@ -62,19 +62,43 @@ SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 APP=/opt/poe-hat
 SERVICE=/etc/systemd/system/poe-hat.service
 
-# If not explicitly specified on CLI, preserve existing configuration if present
+# Select the same config for profile detection and staging; CLI wins.
+CONFIG_SOURCE=""
 if [[ -f "$APP/config.ini" ]]; then
+    CONFIG_SOURCE="$APP/config.ini"
+elif [[ -f "$SOURCE_DIR/config.ini" ]]; then
+    CONFIG_SOURCE="$SOURCE_DIR/config.ini"
+fi
+if [[ -n "$CONFIG_SOURCE" ]]; then
+    # Match main.py ConfigParser semantics: case, sections and defaults.
+    PROFILES="$(python3 - "$CONFIG_SOURCE" <<'PY'
+import configparser
+import sys
+
+cfg = configparser.ConfigParser()
+try:
+    with open(sys.argv[1]) as source:
+        cfg.read_file(source)
+    display = cfg.get('poe', 'display', fallback='poe').strip().lower()
+    fan = cfg.get('poe', 'fan', fallback='poe').strip().lower()
+except (OSError, configparser.Error) as error:
+    print(f'WARNING: Cannot read profiles; using defaults: {error}', file=sys.stderr)
+    display = fan = 'poe'
+if display not in ('poe', 'waveshare-1.3'):
+    print(f'WARNING: Unknown display {display!r}; using poe', file=sys.stderr)
+    display = 'poe'
+if fan not in ('poe', 'none'):
+    print(f'WARNING: Unknown fan {fan!r}; using poe', file=sys.stderr)
+    fan = 'poe'
+print(display, fan)
+PY
+)"
+    read -r PREV_DISP PREV_FAN <<< "$PROFILES"
     if [[ $EXPLICIT_DISPLAY -eq 0 ]]; then
-        PREV_DISP="$(grep -E "^[[:space:]]*display[[:space:]]*=" "$APP/config.ini" | cut -d= -f2 | cut -d'#' -f1 | cut -d';' -f1 | tr -d '[:space:]' || true)"
-        if [[ "$PREV_DISP" == "waveshare-1.3" || "$PREV_DISP" == "poe" ]]; then
-            DISPLAY_TYPE="$PREV_DISP"
-        fi
+        DISPLAY_TYPE="$PREV_DISP"
     fi
     if [[ $EXPLICIT_FAN -eq 0 ]]; then
-        PREV_FAN="$(grep -E "^[[:space:]]*fan[[:space:]]*=" "$APP/config.ini" | cut -d= -f2 | cut -d'#' -f1 | cut -d';' -f1 | tr -d '[:space:]' || true)"
-        if [[ "$PREV_FAN" == "none" || "$PREV_FAN" == "poe" ]]; then
-            FAN_TYPE="$PREV_FAN"
-        fi
+        FAN_TYPE="$PREV_FAN"
     fi
 fi
 
@@ -114,7 +138,12 @@ python3 -m venv "$NEXT_VENV"
 
 if [[ "$DISPLAY_TYPE" == "waveshare-1.3" ]]; then
     "$NEXT_VENV/bin/python3" -m pip install spidev
-    "$NEXT_VENV/bin/python3" -m pip install RPi.GPIO gpiozero lgpio 2>/dev/null || true
+    # Required for OLED buttons; fail before replacing the running installation.
+    "$NEXT_VENV/bin/python3" -m pip install gpiozero lgpio
+    "$NEXT_VENV/bin/python3" -c 'from gpiozero import Button; from gpiozero.pins.lgpio import LGPIOFactory; import lgpio'
+    if ! "$NEXT_VENV/bin/python3" -m pip install RPi.GPIO; then
+        echo "WARNING: Optional RPi.GPIO unavailable; display will use gpiozero." >&2
+    fi
 fi
 
 "$NEXT_VENV/bin/python3" -c 'import PIL, psutil'
@@ -135,10 +164,10 @@ for pkg in drivers controllers renderers; do
 done
 install -m 644 "$SOURCE_DIR/requirements.txt" "$STAGE/"
 
-if [[ -f "$APP/config.ini" ]]; then
-    install -m 644 "$APP/config.ini" "$STAGE/config.ini"
-elif [[ -f "$SOURCE_DIR/config.ini" ]]; then
-    install -m 644 "$SOURCE_DIR/config.ini" "$STAGE/config.ini"
+EXISTING_CONFIG=0
+if [[ -n "$CONFIG_SOURCE" ]]; then
+    EXISTING_CONFIG=1
+    install -m 644 "$CONFIG_SOURCE" "$STAGE/config.ini"
 elif [[ -f "$SOURCE_DIR/config.ini.example" ]]; then
     install -m 644 "$SOURCE_DIR/config.ini.example" "$STAGE/config.ini"
 fi
@@ -155,6 +184,8 @@ if not cfg.has_section('poe'):
     cfg.add_section('poe')
 cfg.set('poe', 'display', '$DISPLAY_TYPE')
 cfg.set('poe', 'fan', '$FAN_TYPE')
+if '$DISPLAY_TYPE' == 'waveshare-1.3' and ('$EXISTING_CONFIG' == '0' or not cfg.has_option('poe', 'screen_timeout')):
+    cfg.set('poe', 'screen_timeout', '60')
 with open('$STAGE/config.ini', 'w') as f:
     cfg.write(f)
 "

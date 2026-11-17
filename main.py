@@ -8,7 +8,7 @@ import util
 
 
 def load_config():
-    defaults = ('poe', 'poe', 43.0, 41.0, 1.0, 3.0, 50, True, 0.0)
+    defaults = ('poe', 'poe', 43.0, 41.0, 1.0, 5.0, 50, True, 0.0)
     config = configparser.ConfigParser()
     try:
         with Path(__file__).with_name('config.ini').open() as source:
@@ -21,27 +21,37 @@ def load_config():
         if fan not in ('poe', 'none'):
             logging.warning("Unknown fan '%s'; falling back to 'poe'", fan)
             fan = 'poe'
-        values = (config.getfloat('poe', 'fan_on_temp', fallback=43.0),
-                  config.getfloat('poe', 'fan_off_temp', fallback=41.0),
-                  config.getfloat('poe', 'interval', fallback=1.0),
-                  config.getfloat('poe', 'page_interval', fallback=3.0),
-                  config.getint('poe', 'contrast', fallback=50),
-                  config.getfloat('poe', 'screen_timeout', fallback=0.0))
-        on, off, interval, page_interval, contrast, screen_timeout = values
-        if not all(math.isfinite(value) for value in values):
-            raise ValueError('Settings must be finite numbers')
-        pixel_shift = config.getboolean('poe', 'pixel_shift', fallback=True)
-        if (not 0 <= off < on <= 85 or not 0.1 <= interval <= 10
-                or not 1 <= page_interval <= 60 or not 1 <= contrast <= 255
-                or screen_timeout < 0):
-            raise ValueError('Invalid parameter range in config')
-        return (display, fan, on, off, interval, page_interval,
-                contrast, pixel_shift, screen_timeout)
     except FileNotFoundError:
         return defaults
-    except (OSError, ValueError, configparser.Error) as error:
-        logging.warning('Invalid config; using defaults: %s', error)
+    except (OSError, configparser.Error) as error:
+        logging.warning('Unreadable config; using defaults: %s', error)
         return defaults
+
+    def setting(name, getter, default, valid=lambda value: True):
+        try:
+            value = getter('poe', name, fallback=default)
+            if not valid(value):
+                raise ValueError('out of range')
+            return value
+        except (ValueError, configparser.Error) as error:
+            logging.warning('Invalid %s; using %s: %s', name, default, error)
+            return default
+
+    on = setting('fan_on_temp', config.getfloat, 43.0,
+                 lambda v: math.isfinite(v) and 0 < v <= 85)
+    off = setting('fan_off_temp', config.getfloat, 41.0,
+                  lambda v: math.isfinite(v) and 0 <= v < 85)
+    if off >= on:
+        logging.warning('Invalid fan threshold pair; using 43/41 C')
+        on, off = 43.0, 41.0
+    interval = setting('interval', config.getfloat, 1.0, lambda v: 0.1 <= v <= 10)
+    page_interval = setting('page_interval', config.getfloat, 5.0, lambda v: 1 <= v <= 60)
+    contrast = setting('contrast', config.getint, 50, lambda v: 1 <= v <= 255)
+    pixel_shift = setting('pixel_shift', config.getboolean, True)
+    timeout = setting('screen_timeout', config.getfloat,
+                      60.0 if display == 'waveshare-1.3' else 0.0,
+                      lambda v: math.isfinite(v) and v >= 0)
+    return display, fan, on, off, interval, page_interval, contrast, pixel_shift, timeout
 
 
 def main():
@@ -71,10 +81,15 @@ def main():
 
             signal.signal(signal.SIGUSR1, wake)
         try:
+            next_sample = 0.0
             while running:
                 started = time.monotonic()
-                POE.poe_hat_display(fan_on_temp, fan_off_temp, page_interval)
-                time.sleep(max(0, interval - (time.monotonic() - started)))
+                sample = started >= next_sample
+                POE.poe_hat_display(fan_on_temp, fan_off_temp, page_interval, sample=sample)
+                if sample:
+                    next_sample = started + interval
+                delay = 0.05 if display == "waveshare-1.3" else interval
+                time.sleep(max(0, min(delay, next_sample - time.monotonic())))
         except KeyboardInterrupt:
             pass
 

@@ -52,10 +52,10 @@ selected. A reboot may be required before the interfaces become available.
 | **DIN**  | Pin 19       | GPIO 10  | SPI0 MOSI|
 | **CLK**  | Pin 23       | GPIO 11  | SPI0 SCLK|
 | **CS**   | Pin 24       | GPIO 8   | SPI0 CE0 |
-| **DC**   | Pin 22       | GPIO 25  | Data/Command |
-| **RST**  | Pin 13       | GPIO 27  | Reset    |
+| **DC**   | Pin 18       | GPIO 24  | Data/Command |
+| **RST**  | Pin 22       | GPIO 25  | Reset    |
 
-*Note on Stacking: The PoE HAT (B) uses I2C-1 (GPIO 2, 3), while the 1.3" OLED uses SPI0 (GPIO 8, 10, 11) and GPIO 25/27. There are no electrical pin conflicts; both can be operated simultaneously with a 40-pin header extender or jumper wires.*
+*Note on Stacking: The PoE HAT (B) uses I2C-1 (GPIO 2, 3), while the 1.3" OLED uses SPI0 (GPIO 8, 10, 11) and GPIO 24/25. There are no electrical pin conflicts; both can be operated simultaneously with a 40-pin header extender or jumper wires.*
 
 #### Installation
 
@@ -100,20 +100,22 @@ fan = poe
 fan_on_temp = 43
 fan_off_temp = 41
 interval = 1
-page_interval = 3
+page_interval = 5
 contrast = 50
 pixel_shift = true
 screen_timeout = 0
 ```
 
-Defaults: fan ON at 43 C, OFF below 41 C, update every 1 second, page rotation every 3 seconds.
+Defaults: fan ON at 43 C, OFF below 41 C, update every 1 second, page rotation every 5 seconds.
 Between 41 and 43 C the previous state is retained. Startup requests fan ON (if fan enabled).
-Missing configuration uses defaults; invalid configuration logs a warning and
-uses defaults. Valid ranges: `0 <= fan_off_temp < fan_on_temp <= 85`,
+Missing configuration uses defaults. Invalid individual settings log a warning
+and fall back independently, preserving valid hardware profiles and other settings.
+An invalid fan threshold pair falls back together to 43/41 C. Unreadable or
+syntactically malformed configuration uses the full defaults. Valid ranges: `0 <= fan_off_temp < fan_on_temp <= 85`,
 `0.1 <= interval <= 10` seconds, `1 <= page_interval <= 60` seconds,
 `1 <= contrast <= 255`, and `screen_timeout >= 0`. `pixel_shift` accepts
 `true` or `false`. A positive screen timeout turns off the OLED while idle;
-fan activity, temperatures at or above the fan-on threshold, and `SIGUSR1`
+on the PoE display profile, fan start, crossing the fan-on threshold, and `SIGUSR1`
 wake it (the signal keeps it awake for 60 seconds). Pixel shifting moves each
 page by one pixel to reduce static-image retention.
 
@@ -204,3 +206,66 @@ sudo rm -rf /opt/poe-hat
 
 Stopping the service requests fan ON. Remove the previous installation/service
 and unused virtual environments separately after checking their paths.
+
+#### Waveshare OLED buttons and sleep
+
+New Waveshare installations use `screen_timeout = 60`; the PoE default stays 0.
+Explicit existing values (including 0) are preserved. With a positive timeout,
+Waveshare starts awake and sleeps after that many seconds since the last button
+press. Fan/temperature changes and page rotation never wake it or extend the timer.
+Fan control continues during sleep. The first press while asleep only wakes it.
+
+KEY1 selects network/system, KEY2 CPU/RAM, KEY3 temperature/fan. Joystick left/right
+selects previous/next page, up/down changes contrast through 10, 25, 50, 75, 100,
+and center immediately sleeps. Brightness changes stay in memory only. Manual
+page selection pauses rotation until the next wake; pixel shifting continues on
+manual pages. Configured contrast and pixel shifting are otherwise retained.
+SIGUSR1 remains available for a timed 60-second wake.
+
+BCM pins from the [official OLED HAT pinout](https://www.waveshare.com/wiki/1.3inch_OLED_HAT):
+KEY1=21, KEY2=20, KEY3=16; up=6, down=19, left=5, right=26, center=13.
+OLED DC=24 and RST=25 (LCD HAT wiring differs). Inputs use gpiozero/lgpio,
+pull-ups and 50 ms debounce, with one event per press (no hold repeat). Callbacks
+only enqueue events; the main loop processes them about every 50 ms without
+increasing the fan/temperature sampling rate. GPIO initialization failure is
+logged and disables buttons without stopping fan control.
+
+To explicitly migrate an existing Waveshare configuration from timeout 0 to 60:
+
+```sh
+sudo python3 - <<'PY'
+import configparser
+from pathlib import Path
+path = Path('/opt/poe-hat/config.ini')
+cfg = configparser.ConfigParser()
+cfg.read(path)
+if cfg.get('poe', 'display', fallback='poe') != 'waveshare-1.3':
+    raise SystemExit('Expected waveshare-1.3 display profile')
+cfg.set('poe', 'screen_timeout', '60')
+with path.open('w') as target:
+    cfg.write(target)
+PY
+sudo systemctl restart poe-hat
+```
+
+Tests mock GPIO and displays. Physical button debounce, boot behavior, SPI output
+and simultaneous fan operation still require testing on the Raspberry Pi.
+
+CPU/RAM are sampled at `interval` independently of the visible page and sleep.
+Unavailable metrics display `LOAD UNKNOWN`; `IP AVAILABLE` means a local source
+address was found, not that internet connectivity was verified. Long hostname
+and uptime text is shortened with `~` to fit the screen. Brightness buttons stop
+at the available steps; an explicit configured value outside 10–100 is retained
+when there is no step in the requested direction.
+Waveshare installation requires gpiozero/lgpio and reports installation failures
+before replacing the running service. RPi.GPIO remains an optional display backend.
+
+For the virtual-pin integration test, install `gpiozero` in the test environment.
+It checks real Button press/hold/release handling; electrical bounce filtering
+still needs a hardware test (gpiozero MockPin does not implement debounce).
+
+Display page/shift timers run independently of the measurement interval on
+Waveshare, and SIGUSR1 redraws on wake without taking an extra measurement.
+A failed sleep command is retried after 30 seconds while fan sampling continues.
+Installer profile precedence is explicit CLI options, installed config, source
+config, then defaults; the selected config is also used when staging settings.

@@ -1,5 +1,5 @@
 """Renderer for 128x64 OLED display (SH1106 / Waveshare 1.3inch OLED)."""
-from .common import draw_progress_bar, get_text_width
+from .common import draw_progress_bar, get_text_width, fit_text, load_status
 
 
 class View128x64:
@@ -10,18 +10,18 @@ class View128x64:
     def render_page_1(self, draw, ip, hostname, uptime_str):
         """Page 1: Network & System Information."""
         draw.text((4, 4), "IP:", font=self.font, fill=0)
-        draw.text((38, 4), str(ip), font=self.font, fill=0)
+        draw.text((34, 4), fit_text(self.font, ip, 90), font=self.font, fill=0)
 
         draw.text((4, 16), "HOST:", font=self.font, fill=0)
-        draw.text((38, 16), str(hostname), font=self.font, fill=0)
+        draw.text((34, 16), fit_text(self.font, hostname, 90), font=self.font, fill=0)
 
         draw.text((4, 28), "UP:", font=self.font, fill=0)
-        draw.text((38, 28), str(uptime_str), font=self.font, fill=0)
+        draw.text((34, 28), fit_text(self.font, uptime_str, 90), font=self.font, fill=0)
 
         draw.text((4, 40), "OS:", font=self.font, fill=0)
-        draw.text((38, 40), "LINUX / PI", font=self.font, fill=0)
+        draw.text((34, 40), "LINUX / PI", font=self.font, fill=0)
 
-        draw.text((4, 52), "STATUS: ONLINE", font=self.font, fill=0)
+        draw.text((4, 52), "IP AVAILABLE" if ip != "--" else "IP UNKNOWN", font=self.font, fill=0)
         draw.text((109, 52), "1/3", font=self.font, fill=0)
 
     def render_page_2(self, draw, cpu, memory):
@@ -37,14 +37,14 @@ class View128x64:
         draw.text((4, 27), s_ram, font=self.font, fill=0)
         draw_progress_bar(draw, 4, 38, 120, 8, ram_val)
 
-        status = "LOAD HIGH" if (cpu_val > 80 or ram_val > 85) else "LOAD NORMAL"
+        status = load_status(cpu, memory)
         draw.text((4, 52), status, font=self.font, fill=0)
         draw.text((109, 52), "2/3", font=self.font, fill=0)
 
     def render_page_3(self, draw, temp, fan_mode, fan_temp, fan_off_temp, fan_enabled=True):
         """Page 3: Thermal bar, threshold indicator, and fan operating mode."""
         temp_val = 30.0 if temp is None else temp
-        s_temp = f"TEMP: {temp_val:.1f}C" if temp is not None else "TEMP: --.-C"
+        s_temp = f"T:{temp_val:.1f}C" if temp is not None else "T:--.-C"
 
         if not fan_enabled:
             s_fan = "[NO FAN]"
