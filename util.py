@@ -53,10 +53,12 @@ class PoeHatB:
         self.cached_memory = None
         self.cpu_ready = False
         self.manual_page = False
+        self.contrast_until = 0.0
         self.buttons = None
         if self.display_type == "waveshare-1.3":
             try:
                 self.buttons = OLEDButtons()
+                logging.info("OLED buttons ready (BCM up=6, down=19)")
             except Exception as error:
                 logging.warning("OLED buttons unavailable; fan control continues: %s", error)
 
@@ -81,6 +83,7 @@ class PoeHatB:
 
     def sleep_display(self):
         """Remember the requested state until the hardware confirms sleep."""
+        self.contrast_until = 0.0
         if self.screen_on:
             self.sleep_pending = self.show is not None or self.display_retry_at > 0
             self.screen_on = False
@@ -104,6 +107,8 @@ class PoeHatB:
                 action = self.buttons.events.get_nowait()
             except Empty:
                 return changed
+            logging.info("OLED input: %s (screen=%s)", action,
+                         "on" if self.screen_on else "off")
             changed = True
             self.last_active_time = now
             self.manual_wake_until = 0.0
@@ -115,14 +120,20 @@ class PoeHatB:
             if action == 'center':
                 self.sleep_display()
             elif action in ('up', 'down'):
-                levels = (10, 25, 50, 75, 100)
+                self.contrast_until = now + 3.0
+                previous_contrast = self.contrast
+                levels = (10, 25, 50, 75, 100, 150, 200, 255)
                 if action == 'up':
                     self.contrast = next((v for v in levels if v > self.contrast), self.contrast)
                 else:
                     self.contrast = next((v for v in reversed(levels) if v < self.contrast), self.contrast)
                 if self.show is not None:
                     self.show.set_contrast(self.contrast)
+                logging.info("OLED contrast: %d -> %d (%s)",
+                             previous_contrast, self.contrast,
+                             "command sent" if self.show is not None else "pending display recovery")
             else:
+                self.contrast_until = 0.0
                 pages = {'key1': 0, 'key2': 1, 'key3': 2}
                 self.page_index = pages.get(action, (self.page_index +
                     (-1 if action == 'left' else 1)) % 3)
@@ -352,8 +363,15 @@ class PoeHatB:
         if not self.screen_on:
             return
 
-        redraw = sample or changed or not was_on or self.show is None
-        if now - self.last_page_switch >= page_interval and not self.manual_page:
+        contrast_visible = now < self.contrast_until
+        contrast_expired = 0 < self.contrast_until <= now
+        if contrast_expired:
+            self.contrast_until = 0.0
+            # Return to the original page for a full page interval.
+            self.last_page_switch = now
+        redraw = sample or changed or not was_on or self.show is None or contrast_expired
+        if (not contrast_visible and not self.manual_page
+                and now - self.last_page_switch >= page_interval):
             redraw = True
             self.page_index = (self.page_index + 1) % 3
             self.last_page_switch = now
@@ -371,7 +389,9 @@ class PoeHatB:
             image = Image.new('1', (self.show.width, self.show.height), "WHITE")
             draw = ImageDraw.Draw(image)
 
-            if getattr(self.show, "height", 32) == 64:
+            if contrast_visible and self.display_type == "waveshare-1.3":
+                self.renderer_64.render_contrast(draw, self.contrast)
+            elif getattr(self.show, "height", 32) == 64:
                 if self.page_index == 0:
                     self.render_page_1_64(draw)
                 elif self.page_index == 1:

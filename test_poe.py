@@ -418,6 +418,47 @@ class WaveshareTests(unittest.TestCase):
              patch.object(self.poe, 'get_temp', return_value=temp):
             self.poe.poe_hat_display(43, 41, page_interval=3, sample=sample)
 
+    def test_contrast_overlay_expires_without_extra_measurement(self):
+        self.poe.page_index = 2
+        with patch.object(self.poe.renderer_64, 'render_contrast') as overlay, \
+             patch.object(self.poe, 'render_page_3_64') as page, \
+             patch.object(self.poe, 'update_fan') as fan:
+            self.tick(1, 'up', sample=False)
+            overlay.assert_called_once()
+            self.assertEqual(overlay.call_args.args[1], 75)
+            self.tick(3, sample=False)
+            self.assertEqual(self.poe.page_index, 2)
+            page.assert_not_called()
+            self.tick(4, sample=False)
+            page.assert_called_once()
+            self.assertEqual(self.poe.page_index, 2)
+            self.assertEqual(self.poe.last_active_time, 1)
+        fan.assert_not_called()
+
+    def test_contrast_overlay_extends_and_preserves_manual_page(self):
+        self.tick(1, 'key2')
+        self.tick(2, 'up')
+        self.tick(4, 'down')
+        self.assertEqual(self.poe.contrast_until, 7)
+        self.tick(7, sample=False)
+        self.assertEqual(self.poe.contrast_until, 0)
+        self.assertTrue(self.poe.manual_page)
+        self.assertEqual(self.poe.page_index, 1)
+        self.tick(20)
+        self.assertEqual(self.poe.page_index, 1)
+
+    def test_contrast_overlay_dismiss_and_wake_consumption(self):
+        self.tick(1, 'up')
+        self.tick(2, 'key3')
+        self.assertEqual(self.poe.contrast_until, 0)
+        self.tick(3, 'down')
+        self.tick(4, 'center')
+        self.assertEqual(self.poe.contrast_until, 0)
+        contrast = self.poe.contrast
+        self.tick(5, 'up')
+        self.assertEqual(self.poe.contrast_until, 0)
+        self.assertEqual(self.poe.contrast, contrast)
+
     def test_waveshare_timeout_with_running_fan(self):
         self.tick(59)
         self.assertTrue(self.poe.screen_on)
@@ -464,7 +505,7 @@ class WaveshareTests(unittest.TestCase):
     def test_waveshare_brightness_bounds_and_first_press(self):
         for _ in range(10):
             self.tick(1, 'up')
-        self.assertEqual(self.poe.contrast, 100)
+        self.assertEqual(self.poe.contrast, 255)
         for _ in range(10):
             self.tick(2, 'down')
         self.assertEqual(self.poe.contrast, 10)
@@ -734,7 +775,7 @@ class RegressionTests(unittest.TestCase):
         from queue import SimpleQueue
         with patch.object(util, 'OLEDButtons', return_value=Mock(events=SimpleQueue())):
             poe = util.PoeHatB(display_type='waveshare-1.3', fan_type='none')
-        for initial, action, expected in [(200, 'up', 200), (200, 'down', 100),
+        for initial, action, expected in [(200, 'up', 255), (200, 'down', 150),
                                            (1, 'down', 1), (1, 'up', 10)]:
             poe.contrast = initial
             poe.buttons.events.put(action)

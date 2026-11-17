@@ -217,7 +217,7 @@ press. Fan/temperature changes and page rotation never wake it or extend the tim
 Fan control continues during sleep. The first press while asleep only wakes it.
 
 KEY1 selects network/system, KEY2 CPU/RAM, KEY3 temperature/fan. Joystick left/right
-selects previous/next page, up/down changes contrast through 10, 25, 50, 75, 100,
+selects previous/next page, up/down changes contrast through 10, 25, 50, 75, 100, 150, 200, 255,
 and center immediately sleeps. Brightness changes stay in memory only. Manual
 page selection pauses rotation until the next wake; pixel shifting continues on
 manual pages. Configured contrast and pixel shifting are otherwise retained.
@@ -256,7 +256,7 @@ CPU/RAM are sampled at `interval` independently of the visible page and sleep.
 Unavailable metrics display `LOAD UNKNOWN`; `IP AVAILABLE` means a local source
 address was found, not that internet connectivity was verified. Long hostname
 and uptime text is shortened with `~` to fit the screen. Brightness buttons stop
-at the available steps; an explicit configured value outside 10–100 is retained
+at the available steps; an explicit configured value outside 10–255 is retained
 when there is no step in the requested direction.
 Waveshare installation requires gpiozero/lgpio and reports installation failures
 before replacing the running service. RPi.GPIO remains an optional display backend.
@@ -270,3 +270,9 @@ Waveshare, and SIGUSR1 redraws on wake without taking an extra measurement.
 A failed sleep command is retried after 30 seconds while fan sampling continues.
 Installer profile precedence is explicit CLI options, installed config, source
 config, then defaults; the selected config is also used when staging settings.
+
+Pressing joystick up/down while awake shows a temporary contrast screen with
+its raw value (out of 255) and a bar. It returns to the previous page 3 seconds
+after the last brightness press, even between measurements. Page keys/left/right
+leave this screen immediately; center sleeps. The contrast steps remain
+10, 25, 50, 75, 100, 150, 200, 255; the displayed number is not a measured brightness percentage.

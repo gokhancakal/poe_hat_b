@@ -77,3 +77,11 @@ class View128x64:
             draw.text((4, 52), "COOLING: PASSIVE", font=self.font, fill=0)
 
         draw.text((109, 52), "3/3", font=self.font, fill=0)
+
+    def render_contrast(self, draw, contrast):
+        """Temporary feedback; value is the controller setting, not luminance %."""
+        for y, text in [(4, "KONTRAST"), (19, f"{contrast} / 255"),
+                        (48, "UP +   DOWN -")]:
+            x = (128 - get_text_width(self.font, text)) // 2
+            draw.text((x, y), text, font=self.font, fill=0)
+        draw_progress_bar(draw, 8, 35, 112, 8, contrast * 100 / 255)
